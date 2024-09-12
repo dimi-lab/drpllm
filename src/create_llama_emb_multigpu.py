@@ -63,7 +63,7 @@ def process_chunk_llama(chunk, model_path, batch_size, max_length, gpu_id):
     
     llama_embedder = LlamaSentenceEmbedding(model_path=model_path, device=device, max_length=max_length)
 
-    columns_to_embed = ['refined_prompt_context', 'refined_prompt_drug', 'refined_prompt_few_shot']
+    columns_to_embed = ['question', 'question_0', 'refined_prompt_cell','refined_prompt_context', 'refined_prompt_drug', 'refined_prompt_few_shot']
     for column in tqdm(columns_to_embed, desc=f"Processing Columns on GPU {gpu_id}", leave=True):
         sentences = chunk[column].fillna("").tolist()
         embeddings = generate_response_and_embed_batch_llama(sentences, llama_embedder, batch_size=batch_size)
