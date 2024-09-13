@@ -26,7 +26,7 @@ def process_dataset(data_df):
     data_df['question_prompt_0'] = prefix + data_df['question_0']
     data_df['question_prompt_1'] = prefix + data_df['question_1']
     data_df['question_prompt_2'] = prefix + data_df['question_2']    
-    data_req_df = data_df[['auc', 'auc_disc', 'CELL_LINE', 'cancer_type', 'cell_line_description',
+    data_req_df = data_df[['AUC', 'label', 'CELL_LINE', 'cancer_type', 'cell_line_description',
                            'NAME', 'drug_description', 'SMILE', 'CONTEXT', 'question', 'question_0',
                            'question_1', 'question_2', 'question_prompt', 'question_prompt_0',
                            'question_prompt_1', 'question_prompt_2']]
