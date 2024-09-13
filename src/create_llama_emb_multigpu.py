@@ -41,16 +41,20 @@ class LlamaSentenceEmbedding:
         embeddings = self.get_hidden_state_before_response(sentences)
         return [embedding for embedding in embeddings]
 
+def clear_memory():
+    torch.cuda.empty_cache()
+    gc.collect()
+    
 # Function to process batches
 def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_size=8):
     try:
         batched_embeddings = []
         for i in tqdm(range(0, len(text_list), batch_size), desc="Processing Batches"):
             batch = text_list[i:i + batch_size]
-            batch_embeddings = llama_embedder.encode(batch)
+            with torch.no_grad():
+                batch_embeddings = llama_embedder.encode(batch)
             batched_embeddings.extend(batch_embeddings)
-            torch.cuda.empty_cache()
-            gc.collect()
+            clear_memory()
         return batched_embeddings
     except Exception as e:
         print(f"Error processing batch: {e}")
@@ -63,7 +67,8 @@ def process_chunk_llama(chunk, model_path, batch_size, max_length, gpu_id):
     
     llama_embedder = LlamaSentenceEmbedding(model_path=model_path, device=device, max_length=max_length)
 
-    columns_to_embed = ['question', 'question_0', 'refined_prompt_cell','refined_prompt_context', 'refined_prompt_drug', 'refined_prompt_few_shot']
+    columns_to_embed = ['question_prompt', 'question_prompt_0', 'question_prompt_1', 'question_prompt_2','refined_prompt_cell',
+                        'refined_prompt_context', 'refined_prompt_drug', 'refined_prompt_few_shot']
     for column in tqdm(columns_to_embed, desc=f"Processing Columns on GPU {gpu_id}", leave=True):
         sentences = chunk[column].fillna("").tolist()
         embeddings = generate_response_and_embed_batch_llama(sentences, llama_embedder, batch_size=batch_size)
