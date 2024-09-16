@@ -13,6 +13,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from scipy import stats
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+import torch.optim as optim 
 from sklearn.linear_model import LinearRegression
 import xgboost as xgb
 from sklearn.neural_network import MLPRegressor
@@ -50,7 +51,7 @@ def prepare_data_for_model(data_df, target_column='AUC', test_size=0.2, val_size
     return X_train, X_val, X_test, Y_train, Y_val, Y_test
 
 # Train and evaluate a linear regression model
-def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test):
+def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test, model='LinearRegression'):
     linreg_model = LinearRegression()
     linreg_model.fit(X_train, Y_train)
     y_pred_val = linreg_model.predict(X_val)
@@ -65,11 +66,12 @@ def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val,
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Test MSE': test_mse,
-        'Test R² Score': test_r2
+        'Test R² Score': test_r2,
+        'model':model
     }
 
 # Train and evaluate an XGBoost model
-def train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test):
+def train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test, model='XGboost'):
     xgboost_model = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=100, random_state=42)
     xgboost_model.fit(X_train, Y_train)
     
@@ -85,11 +87,12 @@ def train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test):
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Test MSE': test_mse,
-        'Test R² Score': test_r2
+        'Test R² Score': test_r2,
+        'model':model
     }
 
 # Train and evaluate a simple MLP regressor
-def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test):
+def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test, model='MLP'):
     mlp_model = MLPRegressor(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
     mlp_model.fit(X_train, Y_train)
 
@@ -105,11 +108,16 @@ def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test):
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Test MSE': test_mse,
-        'Test R² Score': test_r2
+        'Test R² Score': test_r2,
+        'model':model
     }
 
 # Train and evaluate the custom regression head
-def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, batch_size=128, num_epochs=500, learning_rate=0.001, hidden_dims=[512, 128, 64], early_stop_patience=30):
+def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, 
+                        batch_size=128, num_epochs=500, 
+                        learning_rate=0.001, hidden_dims=[512, 128, 64],
+                        early_stop_patience=30, model='DNN'):
+    # Convert data to tensors
     x_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
     x_val_tensor = torch.tensor(X_val, dtype=torch.float32)
@@ -117,6 +125,7 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, batch_si
     x_test_tensor = torch.tensor(X_test, dtype=torch.float32)
     y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
 
+    # Create TensorDataset
     train_dataset = TensorDataset(x_train_tensor, y_train_tensor)
     val_dataset = TensorDataset(x_val_tensor, y_val_tensor)
     test_dataset = TensorDataset(x_test_tensor, y_test_tensor)
@@ -125,80 +134,166 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, batch_si
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    input_dim = X_train.shape[1]
-    model = DeepNN(input_dim, hidden_dims, 1)
+    # Model initialization
+    input_dim = X_train.shape[1]  
+    output_dim = 1                
 
+    nn_model = DeepNN(input_dim, hidden_dims, output_dim)
+    
+    # Move model to device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(device)
-
+    nn_model.to(device)
+    
+    # Define loss function and optimizer
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(nn_model.parameters(), lr=learning_rate)
 
-    patience_counter = 0
+    patience = early_stop_patience
     best_loss = float('inf')
+    epochs_since_best = 0
+
+    train_losses = []
+    val_losses = []
 
     for epoch in range(num_epochs):
-        model.train()
+        nn_model.train()
         running_loss = 0.0
         for batch_x, batch_y in train_loader:
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-
+            
+            # Zero the gradients
             optimizer.zero_grad()
-            outputs = model(batch_x)
+            
+            # Forward pass
+            outputs = nn_model(batch_x)
             loss = criterion(outputs.squeeze(), batch_y)
+            
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
+            
             running_loss += loss.item()
-
+        
         avg_train_loss = running_loss / len(train_loader)
-        model.eval()
-        val_running_loss = 0.0
-        all_val_preds = []
-        all_val_targets = []
+        train_losses.append(avg_train_loss)
+        
+        # Evaluate on validation set
+        nn_model.eval()
         with torch.no_grad():
+            val_running_loss = 0.0
+            all_val_preds = []
+            all_val_targets = []
             for batch_x, batch_y in val_loader:
                 batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-                outputs = model(batch_x)
+                outputs = nn_model(batch_x)
                 val_loss = criterion(outputs.squeeze(), batch_y)
                 val_running_loss += val_loss.item()
+                
                 all_val_preds.append(outputs.cpu().numpy())
                 all_val_targets.append(batch_y.cpu().numpy())
-
-        avg_val_loss = val_running_loss / len(val_loader)
+            
+            avg_val_loss = val_running_loss / len(val_loader)
+            val_losses.append(avg_val_loss)
+            
+            # Compute validation R² score and MSE
+            all_val_preds = np.concatenate(all_val_preds, axis=0)
+            all_val_targets = np.concatenate(all_val_targets, axis=0)
+            val_r2 = r2_score(all_val_targets, all_val_preds)
+            val_mse = mean_squared_error(all_val_targets, all_val_preds)
+        
+        print(f"Epoch [{epoch+1}/{num_epochs}], "
+              f"Train Loss: {avg_train_loss:.4f}, "
+              f"Validation Loss: {avg_val_loss:.4f}, "
+              f"Validation R²: {val_r2:.4f}, "
+              f"Validation MSE: {val_mse:.4f}")
+        
+        # Early Stopping
         if avg_val_loss < best_loss:
             best_loss = avg_val_loss
-            patience_counter = 0
+            epochs_since_best = 0
         else:
-            patience_counter += 1
-            if patience_counter >= early_stop_patience:
+            epochs_since_best += 1
+            if epochs_since_best >= patience:
+                print(f"Early stopping triggered after {epoch+1} epochs")
                 break
 
+    # Final evaluation on the test set
+    nn_model.eval()
+    with torch.no_grad():
+        all_test_preds = []
+        all_test_targets = []
+        for batch_x, batch_y in test_loader:
+            batch_x = batch_x.to(device)
+            outputs = nn_model(batch_x)
+            all_test_preds.append(outputs.cpu().numpy())
+            all_test_targets.append(batch_y.cpu().numpy())
+        
+        all_test_preds = np.concatenate(all_test_preds, axis=0)
+        all_test_targets = np.concatenate(all_test_targets, axis=0)
+
+    test_r2_final = r2_score(all_test_targets, all_test_preds)
+    test_mse_final = mean_squared_error(all_test_targets, all_test_preds)
+    
+    print(f"Final Test R² Score: {test_r2_final:.4f}, Final Test MSE: {test_mse_final:.4f}")
+    
     return {
-        'Validation MSE': avg_val_loss,
-        'Model': model
+        'Test R² Score': test_r2_final,
+        'Test MSE': test_mse_final,
+        'Validation R² Score': val_r2,
+        'Validation MSE': val_mse,
+        'model': model
     }
 
-# Main function
 def main(args):
     # Load data
     data_query = pd.read_csv(args.input)
     X_train, X_val, X_test, Y_train, Y_val, Y_test = prepare_data_for_model(data_query)
 
-    # Choose which model to run
-    if args.model == 'linear':
-        results = train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-    elif args.model == 'xgboost':
-        results = train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-    elif args.model == 'mlp':
-        results = train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-    else:
-        results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+    # Initialize an empty DataFrame to store results from all models
+    all_results_df = pd.DataFrame()
 
-    print(f"Results: {results}")
+    # Define the list of models to run based on the input argument
+    if args.model == 'all':
+        models_to_run = ['linear', 'xgboost', 'mlp', 'custom']
+    else:
+        models_to_run = [args.model]
+
+    # Loop through each model, run it, and append results to DataFrame
+    for model_name in models_to_run:
+        if model_name == 'linear':
+            print('running Linear regression')
+            results = train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+        elif model_name == 'xgboost':
+            print('running xgboost')            
+            results = train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+        elif model_name == 'mlp':
+            print('running MLP')                        
+            results = train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+        elif model_name == 'custom':
+            print('running DeepNN')                                    
+            results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+        else:
+            raise ValueError(f"Unknown model: {model_name}")
+
+        # Add the model name to the results
+        results['Model'] = model_name
+
+        # Convert the results dictionary to a DataFrame and append to all_results_df
+        results_df = pd.DataFrame([results])
+        all_results_df = pd.concat([all_results_df, results_df], ignore_index=True)
+
+    # Write all results to a CSV file
+    output_file = args.output
+    all_results_df.to_csv(output_file, index=False)
+
+    # Print the final results
+    print(f"Results saved to {output_file}")
+    print(all_results_df)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train regression models.")
     parser.add_argument('--input', type=str, required=True, help="Input dataset (CSV).")
-    parser.add_argument('--model', type=str, choices=['linear', 'xgboost', 'mlp', 'custom'], required=True, help="Which model to run.")
+    parser.add_argument('--output', type=str, required=True, help="output filename")    
+    parser.add_argument('--model', type=str, choices=['linear', 'xgboost', 'mlp', 'custom', 'all'], required=True, help="Which model to run.")
     args = parser.parse_args()
     main(args)

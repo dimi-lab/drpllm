@@ -15,28 +15,29 @@ def load_dataset(input_path):
 
 # Function to process the dataset
 def process_dataset(data_df):
-    data_df['question'] = "Is the drug " + data_df['NAME']  + " Resistant or Sensitive to cell line " + data_df['CELL_LINE'] + "?\n"
+    data_df['question'] = "Is the drug " + data_df['drug_name']  + " Resistant or Sensitive to cell line " + data_df['cell_line_name'] + "?\n"
     data_df['question_0'] = "Is the drug " + generate_random_string()  + " Resistant or Sensitive to cell line " + generate_random_string() + "?\n"
 
-    data_df['question_1'] = "Is the drug " + data_df['NAME']  + " Resistant or Sensitive to cell line " + generate_random_string() + "?\n"
+    data_df['question_1'] = "Is the drug " + data_df['drug_name']  + " Resistant or Sensitive to cell line " + generate_random_string() + "?\n"
     
-    data_df['question_2'] = "Is the drug " + generate_random_string()  + " Resistant or Sensitive to cell line " + data_df['CELL_LINE'] + "?\n"
+    data_df['question_2'] = "Is the drug " + generate_random_string()  + " Resistant or Sensitive to cell line " + data_df['cell_line_name'] + "?\n"
     prefix = 'You are an expert scientist. I will give the query, and your task is to return a single word answer: Resistant or Sensitive.\n'
     data_df['question_prompt'] = prefix + data_df['question']
     data_df['question_prompt_0'] = prefix + data_df['question_0']
     data_df['question_prompt_1'] = prefix + data_df['question_1']
     data_df['question_prompt_2'] = prefix + data_df['question_2']    
-    data_req_df = data_df[['AUC', 'label', 'CELL_LINE', 'cancer_type', 'cell_line_description',
-                           'NAME', 'drug_description', 'SMILE', 'CONTEXT', 'question', 'question_0',
+    data_req_df = data_df[['AUC', 'label', 'cell_line_name', 'cancer_type', 'Cellline_desc',
+                           'drug_name', 'drug_desc', 'CONTEXT', 'question', 'question_0',
                            'question_1', 'question_2', 'question_prompt', 'question_prompt_0',
                            'question_prompt_1', 'question_prompt_2']]
 
     # Helper function to create cell and drug description sentences
     def create_cell_sentence(row):
-        return f"The cell line {row['CELL_LINE']}, which is taken from {row['cell_line_description']}"
+        return f"The cell line {row['cell_line_name']}, which is taken from {row['Cellline_desc']}"
 
     def create_drug_sentence(row):
-        return f" {row['drug_description']}. {row['SMILE']} "
+        return f" {row['drug_desc']}" 
+#        return f" {row['drug_description']}. {row['SMILE']} "
 
     data_req_df['cellline_description'] = data_req_df.apply(create_cell_sentence, axis=1)
     data_req_df['drug_final_description'] = data_req_df.apply(create_drug_sentence, axis=1)
@@ -46,8 +47,8 @@ def process_dataset(data_df):
 
     return data_req_df[['cellline_description', 'drug_final_description', 'question', 'question_0',
                         'question_1', 'question_2','question_prompt', 'question_prompt_0',
-                        'question_prompt_1', 'question_prompt_2','auc', 'auc_disc', 'CELL_LINE',
-                        'cancer_type', 'NAME', 'DATASET']]
+                        'question_prompt_1', 'question_prompt_2','AUC', 'label', 'cell_line_name',
+                        'cancer_type', 'drug_name', 'DATASET']]
 
 # Function to create refined prompts
 def generate_refined_prompts(data_df):

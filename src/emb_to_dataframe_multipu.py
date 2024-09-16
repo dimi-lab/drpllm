@@ -32,8 +32,8 @@ def process_embedding_column(df, emb_column, gpu_id):
 def process_and_save_embedded_df(embedding_info):
     df, emb_column, output_filename, gpu_id = embedding_info
     emb_df = process_embedding_column(df, emb_column, gpu_id)
-    emb_df['AUC'] = df['auc']
-    emb_df['label'] = df['auc_disc']
+    emb_df['AUC'] = df['AUC']
+    emb_df['label'] = df['label']
     emb_df['cancer_type'] = df['cancer_type']
 
     emb_df.to_csv(output_filename, index=False)
