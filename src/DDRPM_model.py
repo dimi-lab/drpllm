@@ -58,20 +58,22 @@ def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val,
     y_pred_val = linreg_model.predict(X_val)
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
-    val_spearman = spearmanr(Y_val, y_pred_val).correlation 
+    val_spearman, val_spearman_p = spearmanr(Y_val, y_pred_val)
     
     y_pred_test = linreg_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
-    test_spearman = spearmanr(Y_test, y_pred_test).correlation
+    test_spearman, test_spearman_p  = spearmanr(Y_test, y_pred_test).correlation
     
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Validation Spearman': val_spearman,
+        'Validation Spearman P-Value': val_spearman_p,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
         'Test Spearman':test_spearman,
+        'Test Spearman P-Value': test_spearman_p,
         'model':model
     }
 
@@ -83,21 +85,23 @@ def train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test, m
     y_pred_val = xgboost_model.predict(X_val)
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
-    val_spearman = spearmanr(Y_val, y_pred_val).correlation
+    val_spearman_corr, val_spearman_p = spearmanr(Y_val, y_pred_val)
     
     y_pred_test = xgboost_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
-    test_spearman = spearmanr(Y_test, y_pred_test).correlation
+    test_spearman_corr, test_spearman_p = spearmanr(Y_test, y_pred_test)
     
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
-        'Validation Spearman': val_spearman,
+        'Validation Spearman': val_spearman_corr,
+        'Validation Spearman P-Value': val_spearman_p,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
-        'Test Spearman':test_spearman,
-        'model':model
+        'Test Spearman': test_spearman_corr,
+        'Test Spearman P-Value': test_spearman_p,
+        'model': model
     }
 
 # Train and evaluate a simple MLP regressor
@@ -108,21 +112,25 @@ def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test, model
     y_pred_val = mlp_model.predict(X_val)
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
-    val_spearman = spearmanr(Y_val, y_pred_val).correlation
-    
+    val_spearman_corr, val_spearman_p = spearmanr(Y_val, y_pred_val)
+
     y_pred_test = mlp_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
-    test_spearman = spearmanr(Y_test, y_pred_test).correlation
+    test_spearman_corr, test_spearman_p = spearmanr(Y_test, y_pred_test)
+    
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
-        'Validation Spearman': val_spearman,
+        'Validation Spearman': val_spearman_corr,
+        'Validation Spearman P-Value': val_spearman_p,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
-        'Test Spearman':test_spearman,
-        'model':model
+        'Test Spearman': test_spearman_corr,
+        'Test Spearman P-Value': test_spearman_p,
+        'model': model
     }
+
 
 # Train and evaluate the custom regression head
 def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, 
@@ -212,7 +220,7 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
             all_val_targets = np.concatenate(all_val_targets, axis=0)
             val_r2 = r2_score(all_val_targets, all_val_preds)
             val_mse = mean_squared_error(all_val_targets, all_val_preds)
-            val_spearman_corr, _ = spearmanr(all_val_targets, all_val_preds)
+            val_spearman_corr, val_spearman_p = spearmanr(all_val_targets, all_val_preds)
             
         print(f"Epoch [{epoch+1}/{num_epochs}], "
               f"Train Loss: {avg_train_loss:.4f}, "
@@ -247,7 +255,7 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
 
     test_r2_final = r2_score(all_test_targets, all_test_preds)
     test_mse_final = mean_squared_error(all_test_targets, all_test_preds)
-    test_spearman_corr, _ = spearmanr(all_test_targets, all_test_preds)
+    test_spearman_corr, test_spearman_p = spearmanr(all_test_targets, all_test_preds)
     print(f"Final Test R² Score: {test_r2_final:.4f}, "
           f"Final Test MSE: {test_mse_final:.4f}, "
           f"Final Test Spearman Corr: {test_spearman_corr:.4f}")
@@ -256,9 +264,11 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
         'Test R² Score': test_r2_final,
         'Test MSE': test_mse_final,
         'Test Spearman': test_spearman_corr,
+        'Test Spearman P-Value': test_spearman_p,
         'Validation R² Score': val_r2,
         'Validation MSE': val_mse,
         'Validation Spearman': val_spearman_corr,
+        'Validation Spearman P-Value': val_spearman_p,
         'model': model
     }
 
