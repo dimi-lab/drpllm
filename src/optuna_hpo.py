@@ -33,10 +33,11 @@ def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test,
                    n_trials=30, model_save_path='best_model.pkl', 
                    params_save_path='best_params.json', results_save_path='HPO_results.csv'):
     """
-    Hyperparameter optimization using Optuna, optimized for maximizing the R² score.
+    Hyperparameter optimization using Optuna, optimized for maximizing the Validation Spearman correlation.
     Saves the best model, best hyperparameters, and trial results.
     """
     best_model = None  # Placeholder for best model during trials
+    best_val_spearman = -float('inf')  # To track the best validation Spearman correlation
     trial_results = []  # To store results for each trial
     
     def objective(trial):
@@ -66,24 +67,28 @@ def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test,
             'hidden_dims': hidden_dims,
             'val_r2_final': regression_head_results['Validation R² Score'],
             'mse_final': regression_head_results['Validation MSE'],
-            'avg_val_loss': regression_head_results['Validation Losses'],
-            'model': regression_head_results['Model']
+            'val_spearman': regression_head_results['Validation Spearman'],
+            'test_r2_final': regression_head_results['Test R² Score'],
+            'Test_Spearman': regression_head_results['Test Spearman'],
         })
 
-        nonlocal best_model
-        if not trial.should_prune():
-            best_model = regression_head_results['Model']
+        # Update best model if current trial has better Spearman correlation
+        nonlocal best_model, best_val_spearman
+        val_spearman = regression_head_results['Validation Spearman']
+        if val_spearman > best_val_spearman:
+            best_val_spearman = val_spearman
+            best_model = regression_head_results['model']
 
-        return regression_head_results['Validation R² Score']
+        return val_spearman  # Optimize for Validation Spearman correlation
 
-    # Create a study object and set direction to "maximize" for R² score
+    # Create a study object and set direction to "maximize" for Spearman correlation
     study = optuna.create_study(direction="maximize", sampler=TPESampler())
     study.optimize(objective, n_trials=n_trials)
 
     # Save the best model using joblib
     if best_model is not None:
         joblib.dump(best_model, model_save_path)
-        print(f"Model saved as {model_save_path}")
+        print(f"Best model saved as {model_save_path}")
 
     # Save best hyperparameters to a JSON file
     with open(params_save_path, 'w') as f:
@@ -95,12 +100,13 @@ def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test,
     df_results.to_csv(results_save_path, index=False)
     print(f"Trial results saved to {results_save_path}")
 
-    print("Best R² Score: ", study.best_value)
+    print("Best Spearman Correlation: ", study.best_value)
     print("Best hyperparameters: ", study.best_params)
     
     return study.best_params, study.best_value, df_results
 
-# Optional: Command-line usage
+
+
 if __name__ == "__main__":
     import argparse
 

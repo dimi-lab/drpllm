@@ -265,44 +265,52 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
 def main(args):
     # Load data
     data_query = pd.read_csv(args.input)
-    X_train, X_val, X_test, Y_train, Y_val, Y_test = prepare_data_for_model(data_query)
-
-    # Initialize an empty DataFrame to store all results
+    
+    # List of cancer types to iterate through
+    cancer_type_list = ['Lung Cancer', 'Breast Cancer', 'Skin Cancer',
+                        'Neuroblastoma', 'Leukemia', 'Acute Myeloid Leukemia', 
+                        'Brain Cancer', 'Pancreatic Adenocarcinoma', 
+                        'Ovarian Cancer', 'Colon/Colorectal Cancer']
+    
+    # Initialize an empty DataFrame to store results from all models and cancer types
     all_results_df = pd.DataFrame()
 
-    # Check which models to run
-    if args.model == 'all':
-        models_to_run = ['linear', 'xgboost', 'mlp', 'custom']
-    else:
-        models_to_run = [args.model]
+    # Loop through each cancer type
+    for cancer in cancer_type_list:
+        print(f'Processing cancer type: {cancer}')
+        # Filter data by the current cancer type
+        data_query_cancer = data_query[data_query['cancer_type'] == cancer]
+        
+        # Prepare data for model training
+        X_train, X_val, X_test, Y_train, Y_val, Y_test = prepare_data_for_model(data_query_cancer)
 
-    # Loop over each model to train and evaluate
-    for model_name in models_to_run:
-        if model_name == 'linear':
-            results = train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-        elif model_name == 'xgboost':
-            results = train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-        elif model_name == 'mlp':
-            results = train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test)
-        elif model_name == 'custom':
-            results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+        # Define the list of models to run based on the input argument
+        if args.model == 'all':
+            models_to_run = ['linear', 'xgboost', 'mlp', 'custom']
         else:
-            raise ValueError(f"Unknown model: {model_name}")
+            models_to_run = [args.model]
 
-        # Add the model name to the results
-        results['Model'] = model_name
+        # Loop through each model and run it
+        for model_name in models_to_run:
+            print(f'Running {model_name} for {cancer}')
+            if model_name == 'linear':
+                results = train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+            elif model_name == 'xgboost':
+                results = train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+            elif model_name == 'mlp':
+                results = train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+            elif model_name == 'custom':
+                results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+            else:
+                raise ValueError(f"Unknown model: {model_name}")
 
-        # Convert the results dictionary to a DataFrame and concatenate it with the main results DataFrame
-        results_df = pd.DataFrame([results])
-        all_results_df = pd.concat([all_results_df, results_df], ignore_index=True)
+            # Add the model name and cancer type to the results
+            results['Model'] = model_name
+            results['Cancer_Type'] = cancer  # Add the cancer type here
 
-    # Write all results to a CSV file
-    output_file = args.output
-    all_results_df.to_csv(output_file, index=False)
-
-    # Print the final results
-    print(f"Results saved to {output_file}")
-    print(all_results_df)
+            # Convert the results dictionary to a DataFrame and append to all_results_df
+            results_df = pd.DataFrame([results])
+            all_results_df = pd.concat([all_results_df, results_df], ignore_index=True)
 
 
 if __name__ == "__main__":
