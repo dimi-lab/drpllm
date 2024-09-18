@@ -29,6 +29,43 @@ def prepare_data_for_model(data_df, target_column='AUC', test_size=0.1, val_size
 
     return X_train, X_val, X_test, Y_train, Y_val, Y_test
 
+
+def bootstrap_spearman(y_true, y_pred, n_bootstrap=1000, alpha=0.05):
+    """
+    Compute bootstrap confidence interval for Spearman's rank correlation.
+    
+    Parameters:
+    - y_true: Ground truth values.
+    - y_pred: Predicted values.
+    - n_bootstrap: Number of bootstrap samples.
+    - alpha: Significance level (default 0.05 for 95% confidence interval).
+    
+    Returns:
+    - spearman_corr: Spearman correlation coefficient.
+    - conf_interval: Confidence interval (lower bound, upper bound).
+    """
+    # Calculate the original Spearman correlation
+    spearman_corr, _ = spearmanr(y_true, y_pred)
+    
+    # Bootstrap sampling
+    bootstrapped_corrs = []
+    n = len(y_true)
+    for _ in range(n_bootstrap):
+        # Resample with replacement
+        indices = np.random.choice(range(n), size=n, replace=True)
+        y_true_resample = y_true[indices]
+        y_pred_resample = y_pred[indices]
+        
+        # Calculate Spearman correlation for the resample
+        boot_corr, _ = spearmanr(y_true_resample, y_pred_resample)
+        bootstrapped_corrs.append(boot_corr)
+    
+    # Calculate the confidence interval from the bootstrap distribution
+    lower_bound = np.percentile(bootstrapped_corrs, 100 * (alpha / 2))
+    upper_bound = np.percentile(bootstrapped_corrs, 100 * (1 - alpha / 2))
+    
+    return spearman_corr, (lower_bound, upper_bound)
+
 def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test, 
                    n_trials=30, model_save_path='best_model.pkl', 
                    params_save_path='best_params.json', results_save_path='HPO_results.csv'):
@@ -85,9 +122,8 @@ def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test,
     study = optuna.create_study(direction="maximize", sampler=TPESampler())
     study.optimize(objective, n_trials=n_trials)
 
-    # Save the best model using joblib
     if best_model is not None:
-        joblib.dump(best_model, model_save_path)
+        torch.save(best_model.state_dict(), model_save_path)
         print(f"Best model saved as {model_save_path}")
 
     # Save best hyperparameters to a JSON file

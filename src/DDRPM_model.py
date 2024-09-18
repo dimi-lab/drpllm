@@ -51,6 +51,43 @@ def prepare_data_for_model(data_df, target_column='AUC', test_size=0.2, val_size
 
     return X_train, X_val, X_test, Y_train, Y_val, Y_test
 
+def bootstrap_spearman(y_true, y_pred, n_bootstrap=1000, alpha=0.05):
+    """
+    Compute bootstrap confidence interval for Spearman's rank correlation.
+    
+    Parameters:
+    - y_true: Ground truth values.
+    - y_pred: Predicted values.
+    - n_bootstrap: Number of bootstrap samples.
+    - alpha: Significance level (default 0.05 for 95% confidence interval).
+    
+    Returns:
+    - spearman_corr: Spearman correlation coefficient.
+    - conf_interval: Confidence interval (lower bound, upper bound).
+    """
+    # Calculate the original Spearman correlation
+    spearman_corr, _ = spearmanr(y_true, y_pred)
+    
+    # Bootstrap sampling
+    bootstrapped_corrs = []
+    n = len(y_true)
+    for _ in range(n_bootstrap):
+        # Resample with replacement
+        indices = np.random.choice(range(n), size=n, replace=True)
+        y_true_resample = y_true[indices]
+        y_pred_resample = y_pred[indices]
+        
+        # Calculate Spearman correlation for the resample
+        boot_corr, _ = spearmanr(y_true_resample, y_pred_resample)
+        bootstrapped_corrs.append(boot_corr)
+    
+    # Calculate the confidence interval from the bootstrap distribution
+    lower_bound = np.percentile(bootstrapped_corrs, 100 * (alpha / 2))
+    upper_bound = np.percentile(bootstrapped_corrs, 100 * (1 - alpha / 2))
+    
+    return spearman_corr, (lower_bound, upper_bound)
+
+
 # Train and evaluate a linear regression model
 def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val, Y_test, model='LinearRegression'):
     linreg_model = LinearRegression()
@@ -59,21 +96,25 @@ def train_and_evaluate_linear_regression(X_train, X_val, X_test, Y_train, Y_val,
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
     val_spearman, val_spearman_p = spearmanr(Y_val, y_pred_val)
+    val_spearman, val_spearman_ci = bootstrap_spearman(Y_val, y_pred_val)
     
     y_pred_test = linreg_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
-    test_spearman, test_spearman_p  = spearmanr(Y_test, y_pred_test).correlation
+    test_spearman, test_spearman_p  = spearmanr(Y_test, y_pred_test)
+    test_spearman, test_spearman_ci = bootstrap_spearman(Y_test, y_pred_test)
     
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Validation Spearman': val_spearman,
         'Validation Spearman P-Value': val_spearman_p,
+        'Validation Spearman CI': val_spearman_ci,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
         'Test Spearman':test_spearman,
         'Test Spearman P-Value': test_spearman_p,
+        'Test Spearman CI': test_spearman_ci,
         'model':model
     }
 
@@ -86,21 +127,25 @@ def train_and_evaluate_xgboost(X_train, X_val, X_test, Y_train, Y_val, Y_test, m
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
     val_spearman_corr, val_spearman_p = spearmanr(Y_val, y_pred_val)
+    val_spearman, val_spearman_ci = bootstrap_spearman(Y_val, y_pred_val)
     
     y_pred_test = xgboost_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
     test_spearman_corr, test_spearman_p = spearmanr(Y_test, y_pred_test)
+    test_spearman, test_spearman_ci = bootstrap_spearman(Y_test, y_pred_test)
     
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Validation Spearman': val_spearman_corr,
         'Validation Spearman P-Value': val_spearman_p,
+        'Validation Spearman CI': val_spearman_ci,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
         'Test Spearman': test_spearman_corr,
         'Test Spearman P-Value': test_spearman_p,
+        'Test Spearman CI': test_spearman_ci,
         'model': model
     }
 
@@ -113,23 +158,28 @@ def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test, model
     val_mse = mean_squared_error(Y_val, y_pred_val)
     val_r2 = r2_score(Y_val, y_pred_val)
     val_spearman_corr, val_spearman_p = spearmanr(Y_val, y_pred_val)
-
+    val_spearman, val_spearman_ci = bootstrap_spearman(Y_val, y_pred_val)
+    
     y_pred_test = mlp_model.predict(X_test)
     test_mse = mean_squared_error(Y_test, y_pred_test)
     test_r2 = r2_score(Y_test, y_pred_test)
     test_spearman_corr, test_spearman_p = spearmanr(Y_test, y_pred_test)
+    test_spearman, test_spearman_ci = bootstrap_spearman(Y_test, y_pred_test)
     
     return {
         'Validation MSE': val_mse,
         'Validation R² Score': val_r2,
         'Validation Spearman': val_spearman_corr,
         'Validation Spearman P-Value': val_spearman_p,
+        'Validation Spearman CI': val_spearman_ci,
         'Test MSE': test_mse,
         'Test R² Score': test_r2,
         'Test Spearman': test_spearman_corr,
         'Test Spearman P-Value': test_spearman_p,
+        'Test Spearman CI': test_spearman_ci,
         'model': model
     }
+
 
 
 # Train and evaluate the custom regression head
@@ -221,13 +271,15 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
             val_r2 = r2_score(all_val_targets, all_val_preds)
             val_mse = mean_squared_error(all_val_targets, all_val_preds)
             val_spearman_corr, val_spearman_p = spearmanr(all_val_targets, all_val_preds)
+            val_spearman, val_spearman_ci = bootstrap_spearman(all_val_targets, all_val_preds)
             
         print(f"Epoch [{epoch+1}/{num_epochs}], "
               f"Train Loss: {avg_train_loss:.4f}, "
               f"Validation Loss: {avg_val_loss:.4f}, "
               f"Validation R²: {val_r2:.4f}, "
               f"Validation MSE: {val_mse:.4f}"
-              f"Validation Spearman Corr: {val_spearman_corr:.4f}")
+              f"Validation Spearman Corr: {val_spearman_corr:.4f}"
+              f"CI: {val_spearman_ci}")
         
         # Early Stopping
         if avg_val_loss < best_loss:
@@ -256,6 +308,8 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
     test_r2_final = r2_score(all_test_targets, all_test_preds)
     test_mse_final = mean_squared_error(all_test_targets, all_test_preds)
     test_spearman_corr, test_spearman_p = spearmanr(all_test_targets, all_test_preds)
+    test_spearman, test_spearman_ci = bootstrap_spearman(all_test_targets, all_test_preds)
+    
     print(f"Final Test R² Score: {test_r2_final:.4f}, "
           f"Final Test MSE: {test_mse_final:.4f}, "
           f"Final Test Spearman Corr: {test_spearman_corr:.4f}")
@@ -265,10 +319,12 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
         'Test MSE': test_mse_final,
         'Test Spearman': test_spearman_corr,
         'Test Spearman P-Value': test_spearman_p,
+        'Test Spearman CI': test_spearman_ci,
         'Validation R² Score': val_r2,
         'Validation MSE': val_mse,
         'Validation Spearman': val_spearman_corr,
         'Validation Spearman P-Value': val_spearman_p,
+        'Validation Spearman CI': val_spearman_ci,
         'model': model
     }
 
