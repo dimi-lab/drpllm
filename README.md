@@ -24,7 +24,7 @@ Initial results have demonstrated that DRPLLM can effectively predict drug respo
 
 ## Contributions and Feedback
 
-This project is the result of a collaborative effort during a two-day hackathon at Argonne and was further refined for submission to the AMIA 2025 informatics summit. We appreciate all contributions and welcome feedback to enhance the manuscript further.
+This project is the result of a collaborative effort during a two-day hackathon at Argonne National Laboratory, Illinois.
 
 ## Setup and Usage
 
