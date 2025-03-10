@@ -9,24 +9,28 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch import nn
 from multiprocessing import Pool, Queue, current_process
+from datetime import datetime
 
-# Define the LlamaSentenceEmbedding class
 class LlamaSentenceEmbedding:
     def __init__(self, model_path, device='cuda:0', max_length=512, output_size=3072):
+        torch.cuda.empty_cache() 
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+
         self.device = torch.device(device)
         self.max_length = max_length
+
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path, 
-            torch_dtype=torch.float16
+            torch_dtype=torch.float16,
         ).to(self.device)
 
         self.projection_layer = nn.Linear(self.model.config.hidden_size, output_size).to(self.device).to(torch.float16)
 
     def get_hidden_state_before_response(self, texts: list[str]):
-        inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=self.max_length).to(self.device)
+        inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True,
+                                max_length=self.max_length).to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs, output_hidden_states=True)
             hidden_states = outputs.hidden_states[-1]
@@ -45,7 +49,7 @@ def clear_memory():
     torch.cuda.empty_cache()
     gc.collect()
     
-# Function to process batches
+
 def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_size=8):
     try:
         batched_embeddings = []
@@ -60,44 +64,57 @@ def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_siz
         print(f"Error processing batch: {e}")
         return [None] * len(text_list)
 
-# Function to process the chunk
-def process_chunk_llama(chunk, model_path, batch_size, max_length, gpu_id):
 
+def process_chunk_llama(chunk, model_path, batch_size, max_length, gpu_id, output_folder):
     device = f'cuda:{gpu_id}'
-    
+
+    additional_columns = ['AUC', 'label', 'cell_line_name', 'cancer_type', 'drug_name', 'DATASET']
+
     llama_embedder = LlamaSentenceEmbedding(model_path=model_path, device=device, max_length=max_length)
 
-    columns_to_embed = ['question_prompt', 'question_prompt_0', 'question_prompt_1', 'question_prompt_2','refined_prompt_cell',
-                        'refined_prompt_context', 'refined_prompt_drug', 'refined_prompt_few_shot']
+    columns_to_embed = ['refined_prompt_cell',
+                        'refined_prompt_context',
+                        'refined_prompt_drug',
+                        'refined_prompt_cell_new',
+                        'refined_prompt_context_new',
+                        'refined_prompt_drug_new']
+
+
     for column in tqdm(columns_to_embed, desc=f"Processing Columns on GPU {gpu_id}", leave=True):
         sentences = chunk[column].fillna("").tolist()
         embeddings = generate_response_and_embed_batch_llama(sentences, llama_embedder, batch_size=batch_size)
         chunk.loc[:, f'emb_{column}'] = [json.dumps(emb.tolist()) if emb is not None else "" for emb in embeddings]
         tqdm.write(f"Processed column: {column} on GPU {gpu_id}")
-    
+
     return chunk
 
-# Function to load data
-def load_data(data_path):
-    return pd.read_csv(data_path, sep='\t')
+def load_data(data_path, sample_size=100000, random_state=42):
+    df = pd.read_csv(data_path, sep='\t')
+    
 
-# Function to save the processed data
-def save_data(processed_chunk, output_file):
+    if len(df) > sample_size:
+        df = df.sample(n=sample_size, random_state=random_state)
+        return df
+    else:
+        return df
+
+
+
+def save_data(processed_chunk, output_folder):
+    output_file = output_folder + "/" + 'batch_emb_prompt_llama_8b.tsv'
     processed_chunk.to_csv(output_file, sep='\t', index=False)
 
 
 def init_worker(gpu_ids):
-    # Assign a GPU to each worker based on its process ID
     process_id = current_process()._identity[0] - 1  # _identity[0] gives worker index (1-based)
     gpu_id = gpu_ids[process_id % len(gpu_ids)]  # Distribute GPU IDs cyclically
     return gpu_id
 
 
-# Main function to parse command-line arguments and run the script
 def main():
     parser = argparse.ArgumentParser(description='Run LLaMA embeddings for a given dataset on multiple GPUs')
     parser.add_argument('--input', type=str, required=True, help='Path to input TSV file')
-    parser.add_argument('--output', type=str, required=True, help='Path to save output TSV file')
+    parser.add_argument('--output_folder', type=str, required=True, help='Folder to save output batch files')
     parser.add_argument('--model_path', type=str, default='meta-llama/Meta-Llama-3.1-8B', help='Hugging Face model path')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for embedding')
     parser.add_argument('--max_length', type=int, default=9200, help='Maximum sequence length')
@@ -106,23 +123,22 @@ def main():
 
     args = parser.parse_args()
 
-    # Load the data
     data = load_data(args.input)
 
-    # Split the data into chunks
     chunks = [data[i:i + args.chunk_size] for i in range(0, len(data), args.chunk_size)]
 
     with Pool(processes=len(args.device_ids)) as pool:
-        results = [pool.apply_async(process_chunk_llama, (chunk, args.model_path, args.batch_size, args.max_length, gpu_id))
-                   for chunk, gpu_id in zip(chunks, args.device_ids * (len(chunks) // len(args.device_ids) + 1))]
+        results = [pool.apply_async(process_chunk_llama, (chunk, args.model_path,
+                                                          args.batch_size, args.max_length, gpu_id, args.output_folder))
+           for chunk, gpu_id in zip(chunks, args.device_ids * (len(chunks) // len(args.device_ids) + 1))]
 
-        # Collect results and save to output
         processed_chunks = [res.get() for res in results]
 
     processed_data = pd.concat(processed_chunks, ignore_index=True)
-    save_data(processed_data, args.output)
+    save_data(processed_data, args.output_folder)
 
-    print(f"Processing completed. Data saved to {args.output}")
+    print(f"Processing completed. Data saved to {args.output_folder}")
+
 
 if __name__ == "__main__":
     main()

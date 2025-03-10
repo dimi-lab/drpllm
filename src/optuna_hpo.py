@@ -5,10 +5,11 @@ import optuna
 from optuna.samplers import TPESampler
 from sklearn.model_selection import train_test_split
 from scipy import stats
+import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 import torch.optim as optim 
-from DDRPM_model import run_regression_head, DeepNN  
+from DRPLLM_model import run_regression_head, DeepNN  
 
 def prepare_data_for_model(data_df, target_column='AUC', test_size=0.1, val_size=0.1, random_state=42):
     """
@@ -16,7 +17,7 @@ def prepare_data_for_model(data_df, target_column='AUC', test_size=0.1, val_size
     """
     # Step 1: Remove the target column and 'label' column to get feature data
     data_only_df = data_df.copy()
-    data_only_df = data_only_df.drop([target_column, 'label', 'cancer_type'], axis=1)
+    data_only_df = data_only_df.drop([target_column, 'label', 'cancer_type', 'cell_line_name', 'drug_name'], axis=1) #AUC,label,cancer_type,cell_line_name,drug_name
     X = data_only_df.values
     Y = data_df[target_column].values
 
@@ -122,16 +123,16 @@ def run_optuna_hpo(X_train, X_val, X_test, y_train, y_val, y_test,
     study = optuna.create_study(direction="maximize", sampler=TPESampler())
     study.optimize(objective, n_trials=n_trials)
 
-    if best_model is not None:
-        torch.save(best_model.state_dict(), model_save_path)
-        print(f"Best model saved as {model_save_path}")
+#    if best_model is not None:
+#        torch.save(best_model.state_dict(), model_save_path)
+#        print(f"Best model saved as {model_save_path}")
+#    else:
+#        print("Warning: No valid model found.")
 
-    # Save best hyperparameters to a JSON file
     with open(params_save_path, 'w') as f:
         json.dump(study.best_params, f)
     print(f"Best hyperparameters saved to {params_save_path}")
 
-    # Save the trial results to a DataFrame and write it to a CSV file
     df_results = pd.DataFrame(trial_results)
     df_results.to_csv(results_save_path, index=False)
     print(f"Trial results saved to {results_save_path}")

@@ -4,20 +4,25 @@ import ast
 from tqdm import tqdm
 import argparse
 import logging
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool
 import torch
+from glob import glob
 
 def setup_logging():
-    """
-    Set up logging for the script.
-    """
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_data(input_file):
-    logging.info(f"Loading input file: {input_file}")
-    combined_df = pd.read_csv(input_file, sep='\t')
+def load_data(input_dir):
+    logging.info(f"Loading batch files from directory: {input_dir}")
+
+    batch_files = sorted(glob(os.path.join(input_dir, "batch*.tsv")))
+
+    if not batch_files:
+        logging.warning(f"No batch files found in directory: {input_dir}")
+        return pd.DataFrame() 
+
+    combined_df = pd.concat((pd.read_csv(file, sep='\t') for file in batch_files), ignore_index=True)
     logging.info(f"Loaded dataset shape: {combined_df.shape}")
-    
+
     return combined_df
 
 def process_embedding_column(df, emb_column, gpu_id):
@@ -29,58 +34,60 @@ def process_embedding_column(df, emb_column, gpu_id):
     emb_df.columns = [f'feature_{i+1}' for i in range(emb_df.shape[1])]
     return emb_df
 
-def process_and_save_embedded_df(embedding_info):
-    df, emb_column, output_filename, gpu_id = embedding_info
-    emb_df = process_embedding_column(df, emb_column, gpu_id)
+def process_batch(batch_file, emb_column, output_dir, gpu_id):
+    logging.info(f"Processing batch: {batch_file} on GPU {gpu_id}")
+    df = pd.read_csv(batch_file, sep='\t')
+    df_filtered = df[df[emb_column].notna()].copy()
+    emb_df = process_embedding_column(df_filtered, emb_column, gpu_id)
+
     emb_df['AUC'] = df['AUC']
     emb_df['label'] = df['label']
     emb_df['cancer_type'] = df['cancer_type']
+    emb_df['cell_line_name'] = df['cell_line_name']
+    emb_df['drug_name'] = df['drug_name']
 
-    emb_df.to_csv(output_filename, index=False)
-    logging.info(f"Saved {emb_column} to {output_filename} on GPU {gpu_id}")
+    batch_filename = "feature_" + os.path.basename(batch_file).replace('.tsv', f'_{emb_column}.csv')
+    output_path = os.path.join(output_dir, batch_filename)
+
+    emb_df.to_csv(output_path, index=False)
+    logging.info(f"Saved processed batch to {output_path} on GPU {gpu_id}")
+
+    return output_path  
 
 def main():
-    # Set up logging
     setup_logging()
-
-    # Parse command-line arguments
     parser = argparse.ArgumentParser(description='Process embeddings and save to CSV files.')
-    parser.add_argument('--input_file', type=str, required=True, help='Path to the input file.')
-    parser.add_argument('--output_dir', type=str, default='.', help='Directory to save output CSV files.')
+    parser.add_argument('--input_dir', type=str, required=True, help='Path to the input directory containing batch files.')
+    parser.add_argument('--output_dir', type=str, default='.', help='Directory to save processed batch files.')
     parser.add_argument('--gpu_ids', type=str, default='0,1,2,3', help='Comma-separated list of GPU IDs to use.')
-    parser.add_argument('--dataset', type=str, default='CCLE', help='dataset name')
-    args = parser.parse_args()
+    parser.add_argument('--dataset', type=str, default='CCLE_GDSCv2', help='Dataset name')
+    parser.add_argument('--embedding_column', type=str, required=True, help='Embedding column to process')
 
-    # Ensure output directory exists
+    args = parser.parse_args()
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
 
-    # Load the dataset
-    combined_df = load_data(args.input_file)
+    batch_files = sorted(glob(os.path.join(args.input_dir, "batch*.tsv")))
 
-    # Define embedding columns and corresponding output filenames
-    embeddings_info = [
-        (combined_df, 'emb_question_prompt', os.path.join(args.output_dir, args.dataset + '_question_emb_data.csv')),
-        (combined_df, 'emb_question_prompt_0', os.path.join(args.output_dir, args.dataset + '_question0_emb_data.csv')),
-        (combined_df, 'emb_question_prompt_1', os.path.join(args.output_dir, args.dataset + '_question1_emb_data.csv')),
-        (combined_df, 'emb_question_prompt_2', os.path.join(args.output_dir, args.dataset + '_question2_emb_data.csv')),
-        (combined_df, 'emb_refined_prompt_few_shot', os.path.join(args.output_dir, args.dataset + '_few_shot_emb_data.csv')),
-        (combined_df, 'emb_refined_prompt_context', os.path.join(args.output_dir, args.dataset + '_context_emb_data.csv')),
-        (combined_df, 'emb_refined_prompt_cell', os.path.join(args.output_dir, args.dataset + '_cellline_context_emb_data.csv')),
-        (combined_df, 'emb_refined_prompt_drug', os.path.join(args.output_dir, args.dataset + '_drug_context_emb_data.csv'))
-    ]
+    if not batch_files:
+        logging.error(f"No batch files found in directory: {args.input_dir}")
+        return
 
-    # Assign GPUs in a round-robin fashion
     gpu_ids = [int(gpu_id) for gpu_id in args.gpu_ids.split(',')]
     num_gpus = len(gpu_ids)
 
-    # Assign GPU ID to each task
-    embeddings_info = [(emb_info[0], emb_info[1], emb_info[2], gpu_ids[i % num_gpus]) for i, emb_info in enumerate(embeddings_info)]
+    process_args = [(batch_file, args.embedding_column, args.output_dir, gpu_ids[i % num_gpus]) 
+                    for i, batch_file in enumerate(batch_files)]
 
-    # Set up multiprocessing
-    num_processes = min(num_gpus, len(embeddings_info))  # Ensure we don't start more processes than GPUs
-    with Pool(processes=num_processes) as pool:
-        pool.map(process_and_save_embedded_df, embeddings_info)
+    with Pool(processes=min(num_gpus, len(batch_files))) as pool:
+        processed_files = pool.starmap(process_batch, process_args)
+
+    combined_df = pd.concat((pd.read_csv(file) for file in processed_files), ignore_index=True)
+
+    final_output_path = os.path.join(args.output_dir, f"{args.dataset}_combined_{args.embedding_column}.csv")
+    combined_df.to_csv(final_output_path, index=False)
+
+    logging.info(f"Final combined dataset saved to {final_output_path}")
 
 if __name__ == '__main__':
     main()

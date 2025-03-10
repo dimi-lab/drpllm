@@ -9,7 +9,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from torch import nn
 
-# Define the LlamaSentenceEmbedding class
+
 class LlamaSentenceEmbedding:
     def __init__(self, model_path, device='cuda:0', max_length=512, output_size=3072):
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -40,7 +40,6 @@ class LlamaSentenceEmbedding:
         embeddings = self.get_hidden_state_before_response(sentences)
         return [embedding for embedding in embeddings]
 
-# Function to process batches
 def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_size=8):
     try:
         batched_embeddings = []
@@ -55,9 +54,9 @@ def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_siz
         print(f"Error processing batch: {e}")
         return [None] * len(text_list)
 
-# Function to process the chunk
+
 def process_chunk_llama(chunk, llama_embedder, batch_size=8):
-    columns_to_embed = ['refined_prompt_context', 'refined_prompt_drug','refined_prompt_few_shot']
+    columns_to_embed = ['refined_prompt_context', 'refined_prompt_drug','refined_prompt_cellline']
     for column in tqdm(columns_to_embed, desc="Processing Columns", leave=True):
         sentences = chunk[column].fillna("").tolist()
         embeddings = generate_response_and_embed_batch_llama(sentences, llama_embedder, batch_size=batch_size)
@@ -65,15 +64,15 @@ def process_chunk_llama(chunk, llama_embedder, batch_size=8):
         tqdm.write(f"Processed column: {column}")
     return chunk
 
-# Function to load data
+
 def load_data(data_path):
     return pd.read_csv(data_path, sep='\t')
 
-# Function to save the processed data
+
 def save_data(processed_chunk, output_file):
     processed_chunk.to_csv(output_file, sep='\t', index=False)
 
-# Main function to parse command-line arguments and run the script
+
 def main():
     parser = argparse.ArgumentParser(description='Run LLaMA embeddings for a given dataset')
     parser.add_argument('--input', type=str, required=True, help='Path to input TSV file')
@@ -85,16 +84,12 @@ def main():
     
     args = parser.parse_args()
 
-    # Load the data
     data = load_data(args.input)
     
-    # Initialize the LLaMA embedding model
     llama_embedder = LlamaSentenceEmbedding(model_path=args.model_path, device=args.device, max_length=args.max_length)
     
-    # Process the data chunk
     processed_chunk = process_chunk_llama(data, llama_embedder, batch_size=args.batch_size)
     
-    # Save the processed data
     save_data(processed_chunk, args.output)
 
     print(f"Processing completed. Data saved to {args.output}")
