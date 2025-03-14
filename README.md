@@ -36,8 +36,22 @@ cd drpllm
 # Install dependencies
 pip install -r requirements.txt
 
+
+# Example usage
+
+# create prompts
+python src/create_prompts.py --input_path model_data/CCLE_GDSC_input_dataset.tsv.gz  --output_path test_gdsc.tsv --dataset ccl
+
 # generate embeddings
-python create_llama_emb_multigpu.py
+mkdir test/
+python src/create_llama_emb_multigpu.py --input test_gdsc.tsv --output_folder test/
+
+# create dataframe
+python src/emb_to_dataframe_multipu.py --input_dir test/ --output_dir test/ --embedding_column emb_refined_prompt_cell --dataset ccl
+
+python src/emb_to_dataframe_multipu.py --input_dir test/ --output_dir test/ --embedding_column emb_refined_prompt_drug --dataset ccl
+
+python src/emb_to_dataframe_multipu.py --input_dir test/ --output_dir test/ --embedding_column emb_refined_prompt_context --dataset ccl
 
 # Evaluate the models
-python DDRPM_model.py
+python src/DRPLLM_model.py --input test/ccl_combined_emb_refined_prompt_cell.csv --output test/spearman_ccl_cell.csv --atype ccl_omics --model all
