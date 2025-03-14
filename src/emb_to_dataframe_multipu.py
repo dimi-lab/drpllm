@@ -45,7 +45,9 @@ def process_batch(batch_file, emb_column, output_dir, gpu_id):
     emb_df['cancer_type'] = df['cancer_type']
     emb_df['cell_line_name'] = df['cell_line_name']
     emb_df['drug_name'] = df['drug_name']
-
+    emb_df['Tissue'] = df['Tissue']
+    emb_df['Tissue_sub_type'] = df['Tissue_sub_type']
+    
     batch_filename = "feature_" + os.path.basename(batch_file).replace('.tsv', f'_{emb_column}.csv')
     output_path = os.path.join(output_dir, batch_filename)
 

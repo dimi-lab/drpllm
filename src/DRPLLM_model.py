@@ -48,7 +48,10 @@ class DeepNN(nn.Module):
 
 def prepare_and_save_splits(data_df, target_column='AUC', test_size=0.2,
                             val_size=0.2, random_state=42):
-    meta_columns = ['AUC', 'label', 'cancer_type','cell_line_name', 'drug_name'] #AUC,label,cancer_type,cell_line_name,drug_name
+
+    meta_columns = ['AUC', 'label', 'cancer_type', 'cell_line_name', 'drug_name']
+    optional_columns = ['Tissue', 'Tissue_sub_type']
+    meta_columns.extend([col for col in optional_columns if col in data_df.columns])
     meta_data = data_df[meta_columns].copy()
     data_only_df = data_df.drop(columns=meta_columns)
     X = data_only_df.values
@@ -61,15 +64,25 @@ def prepare_and_save_splits(data_df, target_column='AUC', test_size=0.2,
     X_train, X_val, Y_train, Y_val, meta_train, meta_val = train_test_split(
         X_train_val, Y_train_val, meta_train_val, test_size=val_relative_size, random_state=random_state
     )
-#    train_file = "train_metadata.tsv"
-#    val_file = "val_metadata.tsv"
-#    test_file = "test_metadata.tsv"
 
-#    meta_train.to_csv(train_file, sep='\t', index=False)
-#    meta_val.to_csv(val_file, sep='\t', index=False)
-#    meta_test.to_csv(test_file, sep='\t', index=False)
+    return X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test, meta_val
+#def prepare_and_save_splits(data_df, target_column='AUC', test_size=0.2,
+#                            val_size=0.2, random_state=42):
+#    meta_columns = ['AUC', 'label', 'cancer_type','cell_line_name', 'drug_name', 'Tissue', 'Tissue_sub_type'] #AUC,label,cancer_type,cell_line_name,drug_name
+#    meta_data = data_df[meta_columns].copy()
+#    data_only_df = data_df.drop(columns=meta_columns)
+#    X = data_only_df.values
+#    Y = data_df[target_column].values
+#    X_train_val, X_test, Y_train_val, Y_test, meta_train_val, meta_test = train_test_split(
+#        X, Y, meta_data, test_size=test_size, random_state=random_state
+#    )
 
-    return X_train, X_val, X_test, Y_train, Y_val, Y_test
+#    val_relative_size = val_size / (1 - test_size)  # Adjust validation size relative to train+val size
+#    X_train, X_val, Y_train, Y_val, meta_train, meta_val = train_test_split(
+#        X_train_val, Y_train_val, meta_train_val, test_size=val_relative_size, random_state=random_state
+#    )
+#
+#    return X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test, meta_val
 
 
 def bootstrap_spearman(y_true, y_pred, n_bootstrap=1000, alpha=0.05):
@@ -183,10 +196,10 @@ def train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test, model
     }
 
 
-def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, 
+def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test, meta_test, meta_val, analysis_type,
                         batch_size=128, num_epochs=500, dropout_rate=0.2, 
                         learning_rate=0.001, hidden_dims=[512, 128, 64],
-                        early_stop_patience=30, model='DNN'):
+                        early_stop_patience=50, model='DNN'):
     
     x_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
@@ -221,7 +234,7 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
     train_losses = []
     val_losses = []
 
-    log_file = "training_log.txt"
+    log_file = analysis_type + "_training_log.txt"
     
     for epoch in range(num_epochs):
         nn_model.train()
@@ -253,8 +266,8 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
                 val_loss = criterion(outputs.squeeze(), batch_y)
                 val_running_loss += val_loss.item()
                 
-                all_val_preds.append(outputs.cpu().numpy())
-                all_val_targets.append(batch_y.cpu().numpy())
+                all_val_preds.append(outputs.cpu().numpy().flatten())
+                all_val_targets.append(batch_y.cpu().numpy().flatten())
             
             avg_val_loss = val_running_loss / len(val_loader)
             val_losses.append(avg_val_loss)
@@ -302,11 +315,22 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
         for batch_x, batch_y in test_loader:
             batch_x = batch_x.to(device)
             outputs = nn_model(batch_x)
-            all_test_preds.append(outputs.cpu().numpy())
-            all_test_targets.append(batch_y.cpu().numpy())
+            all_test_preds.append(outputs.cpu().numpy().flatten())
+            all_test_targets.append(batch_y.cpu().numpy().flatten())
         
         all_test_preds = np.concatenate(all_test_preds, axis=0)
         all_test_targets = np.concatenate(all_test_targets, axis=0)
+
+
+    prediction_error = all_test_preds - all_test_targets  # Difference between Predicted and Actual AUC
+
+    test_results_df = meta_test.copy().reset_index(drop=True)  # Keep metadata
+    test_results_df["Predicted_AUC"] = all_test_preds
+    test_results_df["Actual_AUC"] = all_test_targets
+    test_results_df["Prediction_Error"] = prediction_error  # Difference between prediction and actual AUC
+
+    # Save as TSV
+    test_results_df.to_csv(analysis_type + "_DNN_test_results.tsv", sep="\t", index=False)
 
     test_r2_final = r2_score(all_test_targets, all_test_preds)
     test_mse_final = mean_squared_error(all_test_targets, all_test_preds)
@@ -333,9 +357,10 @@ def run_regression_head(X_train, X_val, X_test, y_train, y_val, y_test,
 
 def main(args):
     data_query = pd.read_csv(args.input)
+    analysis_type = args.atype
     df_filtered = data_query.dropna()
     print(df_filtered.shape)
-    X_train, X_val, X_test, Y_train, Y_val, Y_test = prepare_and_save_splits(df_filtered)
+    X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test, meta_val = prepare_and_save_splits(df_filtered)
 
     all_results_df = pd.DataFrame()
 
@@ -352,7 +377,8 @@ def main(args):
         elif model_name == 'mlp':
             results = train_and_evaluate_mlp(X_train, X_val, X_test, Y_train, Y_val, Y_test)
         elif model_name == 'custom':
-            results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test)
+            results = run_regression_head(X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test,
+                                          meta_val, analysis_type)
         else:
             raise ValueError(f"Unknown model: {model_name}")
 
@@ -371,7 +397,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train regression models.")
     parser.add_argument('--input', type=str, required=True, help="Input dataset (CSV).")
-    parser.add_argument('--output', type=str, required=True, help="output filename")    
-    parser.add_argument('--model', type=str, choices=['linear', 'xgboost', 'mlp', 'custom', 'all'], required=True, help="Which model to run.")
+    parser.add_argument('--output', type=str, required=True, help="output filename")
+    parser.add_argument('--atype', type=str, required=True, help="type of analysis")
+    parser.add_argument('--model', type=str, choices=['linear', 'xgboost', 'mlp', 'custom', 'all'],
+                        required=True, help="Which model to run.")
     args = parser.parse_args()
     main(args)
