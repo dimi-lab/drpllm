@@ -68,16 +68,16 @@ def generate_response_and_embed_batch_llama(text_list, llama_embedder, batch_siz
 def process_chunk_llama(chunk, model_path, batch_size, max_length, gpu_id, output_folder):
     device = f'cuda:{gpu_id}'
 
-    additional_columns = ['AUC', 'label', 'cell_line_name', 'cancer_type', 'drug_name', 'DATASET']
+    additional_columns = ['AUC', 'label', 'cancer_type', 'cell_line_name', 'drug_name']
+    optional_columns = ['Tissue', 'Tissue_sub_type']
+#    additional_columns.extend([col for col in optional_columns if col in data_df.columns])
 
     llama_embedder = LlamaSentenceEmbedding(model_path=model_path, device=device, max_length=max_length)
 
     columns_to_embed = ['refined_prompt_cell',
                         'refined_prompt_context',
-                        'refined_prompt_drug',
-                        'refined_prompt_cell_new',
-                        'refined_prompt_context_new',
-                        'refined_prompt_drug_new']
+                        'refined_prompt_drug']
+
 
 
     for column in tqdm(columns_to_embed, desc=f"Processing Columns on GPU {gpu_id}", leave=True):

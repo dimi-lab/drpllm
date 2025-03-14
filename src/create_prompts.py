@@ -9,9 +9,9 @@ def generate_random_string(length=5):
     return random_string
 
 def load_dataset(input_path):
-    return pd.read_csv(input_path, sep='\t')
+    return pd.read_csv(input_path, sep='\t', compression='gzip')
 
-def generate_ccl_prompts(row):
+def generate_ccl_prompts(data_df):
     def generate_question(row):
         return f"Is cell line {row['cell_line_name']} Resistant or Sensitive to drug {row['drug_name']}?\n"
     
@@ -31,7 +31,7 @@ def generate_ccl_prompts(row):
 
     return data_df
 
-def generate_pdx_prompts(row):
+def generate_pdx_prompts(data_df):
     def generate_question(row):
         return f"Is model {row['Model']} Resistant or Sensitive to drug {row['Treatment']}?\n"
 
@@ -39,10 +39,10 @@ def generate_pdx_prompts(row):
         return f"You are an expert scientist, your task is to return a single word answer: Resistantor Sensitive.\nQuery: {row['question']} Context: {row['CONTEXT']}\nAnswer:"
 
     def generate_refined_prompt_drug(row):
-        return f"You are an expert scientist, your task is to return a single word answer: Resistantor Sensitive.\nQuery: {row['question']} Context: {row['drug_final_description']}\nAnswer:"
+        return f"You are an expert scientist, your task is to return a single word answer: Resistantor Sensitive.\nQuery: {row['question']} Context: {row['drug_desc']}\nAnswer:"
 
     def generate_refined_prompt_cell(row):
-        return f"You are an expert scientist, your task is to return a single word answer: Resistantor Sensitive.\nQuery: {row['question']} Context: {row['cellline_description']}\nAnswer:"
+        return f"You are an expert scientist, your task is to return a single word answer: Resistantor Sensitive.\nQuery: {row['question']} Context: {row['Cellline_desc']}\nAnswer:"
     data_df['question'] = data_df.apply(generate_question, axis=1)
     data_df['refined_prompt_context'] = data_df.apply(generate_refined_prompt_context, axis=1)
     data_df['refined_prompt_drug'] = data_df.apply(generate_refined_prompt_drug, axis=1)

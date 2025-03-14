@@ -66,23 +66,6 @@ def prepare_and_save_splits(data_df, target_column='AUC', test_size=0.2,
     )
 
     return X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test, meta_val
-#def prepare_and_save_splits(data_df, target_column='AUC', test_size=0.2,
-#                            val_size=0.2, random_state=42):
-#    meta_columns = ['AUC', 'label', 'cancer_type','cell_line_name', 'drug_name', 'Tissue', 'Tissue_sub_type'] #AUC,label,cancer_type,cell_line_name,drug_name
-#    meta_data = data_df[meta_columns].copy()
-#    data_only_df = data_df.drop(columns=meta_columns)
-#    X = data_only_df.values
-#    Y = data_df[target_column].values
-#    X_train_val, X_test, Y_train_val, Y_test, meta_train_val, meta_test = train_test_split(
-#        X, Y, meta_data, test_size=test_size, random_state=random_state
-#    )
-
-#    val_relative_size = val_size / (1 - test_size)  # Adjust validation size relative to train+val size
-#    X_train, X_val, Y_train, Y_val, meta_train, meta_val = train_test_split(
-#        X_train_val, Y_train_val, meta_train_val, test_size=val_relative_size, random_state=random_state
-#    )
-#
-#    return X_train, X_val, X_test, Y_train, Y_val, Y_test, meta_test, meta_val
 
 
 def bootstrap_spearman(y_true, y_pred, n_bootstrap=1000, alpha=0.05):
