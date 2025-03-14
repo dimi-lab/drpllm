@@ -1,4 +1,4 @@
-name: llm
+name: drpllm
 channels:
   - pytorch
   - conda-forge

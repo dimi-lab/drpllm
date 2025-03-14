@@ -34,8 +34,8 @@ git clone https://github.com/dimi-lab/drpllm.git
 cd drpllm
 
 # Install dependencies
-pip install -r requirements.txt
-
+conda env create -f environment.yml
+conda activate drpllm
 
 # Example usage
 
